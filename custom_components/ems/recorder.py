@@ -22,6 +22,7 @@ from .const import (
     CONF_LOAD_POWER,
     CONF_PV_POWER,
 )
+from .driver import InverterDriver
 from .inputs import Inputs
 from .measurement import MeasurementWriter
 
@@ -36,7 +37,9 @@ class MeasurementRecorder:
         inputs: Inputs,
         price_now_ct: Callable[[], float | None],
         planned: Callable[[Any], tuple[str | None, float | None]],
+        driver: InverterDriver,
     ) -> None:
+        self.driver = driver
         self.hass = hass
         self.conf = conf
         self.inputs = inputs
@@ -90,7 +93,7 @@ class MeasurementRecorder:
         (the plan is recomputed every 15 min, the hourly recording alone would show older plans)."""
         plan_action, plan_soc = self.planned(dt_util.now())
         self.writer.extra_info(
-            action=self.inputs.inverter().action_code, plan_action=plan_action, plan_soc_percent=plan_soc
+            action=self.driver.reading().action_code, plan_action=plan_action, plan_soc_percent=plan_soc
         )
 
     @callback

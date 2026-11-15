@@ -36,6 +36,20 @@ CONF_IMPORTED = "netzbezug"
 CONF_CONSUMED = "verbrauch"
 CONF_NOTIFY = "benachrichtigung"
 """Notify service for approval requests and alerts, e.g. notify.my_phone. Without it no push."""
+CONF_INVERTER = "wechselrichter"
+"""Which inverter driver switches the battery: sungrow (entities of the mkaiser integration, default) or
+fronius (Modbus TCP directly, see fronius.py)."""
+INVERTER_SUNGROW = "sungrow"
+INVERTER_FRONIUS = "fronius"
+INVERTERS = (INVERTER_SUNGROW, INVERTER_FRONIUS)
+CONF_FRONIUS_HOST = "fronius_host"
+CONF_FRONIUS_PORT = "fronius_port"
+CONF_FRONIUS_UNIT = "fronius_unit_id"
+CONF_FRONIUS_REVERT_S = "fronius_ruecksetzen_s"
+"""Revert timer of the Fronius (InOutWRte_RvrtTms) in s; 0 = off. The driver rewrites before it expires."""
+FRONIUS_PORT_DEFAULT = 502
+FRONIUS_UNIT_DEFAULT = 1
+FRONIUS_REVERT_MAX_S = 3600
 CONF_WEAR_CT = "verschleiss_ct"
 CONF_GRID_KW = "netzladeleistung_kw"
 """Fixed values in configuration.yaml: then wear / grid charge power cannot be changed in the app."""
@@ -112,7 +126,11 @@ REQUIRED_KEYS = (CONF_SOC,)
 """Without these the planner cannot run; all other inputs have fallbacks. Without `preise` the prices come
 from the Tibber integration (action tibber.get_prices)."""
 
+FRONIUS_KEYS = (CONF_FRONIUS_HOST, CONF_FRONIUS_PORT, CONF_FRONIUS_UNIT, CONF_FRONIUS_REVERT_S)
+
 OPTION_DEFAULTS = {**DEFAULTS, CONF_FEED_IN_CT: 7.0, CONF_RECORDING: True, CONF_MEASUREMENT: True}
+"""The inverter keys have no defaults here (driver.make_driver applies them), so a Sungrow setup shows no
+Fronius settings in the app."""
 
 SIGNAL_EXECUTOR = f"{DOMAIN}_executor_update"
 """Dispatcher signal: the executor's state changed (entities update)."""

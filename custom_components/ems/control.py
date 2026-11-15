@@ -236,14 +236,19 @@ STATE = {
 }
 
 
+def state_text(setting: InverterSetting, detail: str) -> str:
+    """A setting in the executor's terms; anything else as 'Anders (detail)'."""
+    return STATE.get(setting) or f"Anders ({detail})"
+
+
 def inverter_state(mode: str | None, forced: str | None, discharge_w: float | None) -> str:
-    """What is set at the inverter, in the executor's terms (or 'Anders (…)' for anything else)."""
+    """What is set at the Sungrow, in the executor's terms (or 'Anders (…)' for anything else)."""
     setting = classify(mode, forced, discharge_w)
     if setting in STATE:
         return STATE[setting]
     g = discharge_w if discharge_w is not None else -1
     shown = int(g) if math.isfinite(g) else g  # an entity may report inf/nan; never fail on the text
-    return f"Anders ({mode} / {forced} / {shown} W)"
+    return state_text(setting, f"{mode} / {forced} / {shown} W")
 
 
 # ---- booking ----------------------------------------------------------------------------------

@@ -21,9 +21,14 @@ from .const import (
     CONF_FEED_IN_CT,
     CONF_FORCED,
     CONF_FORCED_POWER,
+    CONF_FRONIUS_HOST,
+    CONF_FRONIUS_PORT,
+    CONF_FRONIUS_REVERT_S,
+    CONF_FRONIUS_UNIT,
     CONF_GRID_CHARGE_POWER,
     CONF_GRID_POWER,
     CONF_IMPORTED,
+    CONF_INVERTER,
     CONF_LOAD_POWER,
     CONF_LOAD_PROFILE,
     CONF_MEASUREMENT,
@@ -39,6 +44,13 @@ from .const import (
     CONF_WEAR,
     DOMAIN,
     EXECUTOR_KEYS,
+    FRONIUS_KEYS,
+    FRONIUS_PORT_DEFAULT,
+    FRONIUS_REVERT_MAX_S,
+    FRONIUS_UNIT_DEFAULT,
+    INVERTER_FRONIUS,
+    INVERTER_SUNGROW,
+    INVERTERS,
     MEASUREMENT_KEYS,
     OPTION_DEFAULTS,
     PLANNER_KEYS,
@@ -90,6 +102,8 @@ def format_settings(conf: dict[str, Any]) -> str:
         *MEASUREMENT_KEYS,
         *EXECUTOR_KEYS,
         CONF_NOTIFY,
+        CONF_INVERTER,
+        *(FRONIUS_KEYS if conf.get(CONF_INVERTER) == INVERTER_FRONIUS else ()),
     ]
 
     def value(key: str) -> Any:
@@ -123,11 +137,51 @@ def _measurement_schema() -> vol.Schema:
     return vol.Schema(fields)
 
 
+CONTROL_SUGGESTED = {
+    CONF_INVERTER: INVERTER_SUNGROW,
+    CONF_FRONIUS_PORT: FRONIUS_PORT_DEFAULT,
+    CONF_FRONIUS_UNIT: FRONIUS_UNIT_DEFAULT,
+    CONF_FRONIUS_REVERT_S: 0,
+}
+"""Suggested in the dialog only; not stored unless the user keeps them (see const.OPTION_DEFAULTS)."""
+
+
+def _number(low: int, high: int, unit: str | None = None) -> selector.NumberSelector:
+    config = selector.NumberSelectorConfig(min=low, max=high, step=1, mode="box")
+    if unit:
+        config["unit_of_measurement"] = unit
+    return selector.NumberSelector(config)
+
+
 def _control_schema() -> vol.Schema:
-    fields: dict[Any, Any] = {vol.Optional(CONF_NOTIFY): selector.TextSelector()}
+    fields: dict[Any, Any] = {
+        vol.Optional(CONF_NOTIFY): selector.TextSelector(),
+        vol.Optional(CONF_INVERTER): selector.SelectSelector(
+            selector.SelectSelectorConfig(options=list(INVERTERS), translation_key=CONF_INVERTER)
+        ),
+        vol.Optional(CONF_FRONIUS_HOST): selector.TextSelector(),
+        vol.Optional(CONF_FRONIUS_PORT): _number(1, 65535),
+        vol.Optional(CONF_FRONIUS_UNIT): _number(0, 255),
+        vol.Optional(CONF_FRONIUS_REVERT_S): _number(0, FRONIUS_REVERT_MAX_S, "s"),
+    }
     for key in EXECUTOR_KEYS:
         fields[vol.Optional(key)] = _entity(key)
     return vol.Schema(fields)
+
+
+def _control_input(user_input: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
+    """Clean the control step: whole numbers, Fronius fields only for Fronius; errors by field."""
+    data = dict(user_input)
+    if data.get(CONF_INVERTER) != INVERTER_FRONIUS:
+        for key in FRONIUS_KEYS:
+            data.pop(key, None)
+        return data, {}
+    for key in (CONF_FRONIUS_PORT, CONF_FRONIUS_UNIT, CONF_FRONIUS_REVERT_S):
+        if data.get(key) is not None:
+            data[key] = int(data[key])
+    host = (data.get(CONF_FRONIUS_HOST) or "").strip()
+    data[CONF_FRONIUS_HOST] = host
+    return data, ({} if host else {CONF_FRONIUS_HOST: "fronius_host"})
 
 
 class EmsConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -157,11 +211,17 @@ class EmsConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_control(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
         if user_input is not None:
-            return self.async_create_entry(title=TITLE, data={**self._data, **user_input})
+            data, errors = _control_input(user_input)
+            if not errors:
+                return self.async_create_entry(title=TITLE, data={**self._data, **data})
         return self.async_show_form(
             step_id="control",
-            data_schema=self.add_suggested_values_to_schema(_control_schema(), OPTION_DEFAULTS),
+            data_schema=self.add_suggested_values_to_schema(
+                _control_schema(), {**CONTROL_SUGGESTED, **OPTION_DEFAULTS, **(user_input or {})}
+            ),
+            errors=errors,
         )
 
     async def async_step_import(self, import_data: dict[str, Any]) -> ConfigFlowResult:
@@ -215,11 +275,14 @@ class EmsOptionsFlow(OptionsFlow):
         )
 
     async def async_step_control(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
         if user_input is not None:
-            return self.async_create_entry(data={**self._data, **user_input})
+            data, errors = _control_input(user_input)
+            if not errors:
+                return self.async_create_entry(data={**self._data, **data})
+        suggested = {**CONTROL_SUGGESTED, **merged_config(self.config_entry), **(user_input or {})}
         return self.async_show_form(
             step_id="control",
-            data_schema=self.add_suggested_values_to_schema(
-                _control_schema(), merged_config(self.config_entry)
-            ),
+            data_schema=self.add_suggested_values_to_schema(_control_schema(), suggested),
+            errors=errors,
         )

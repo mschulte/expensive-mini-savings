@@ -11,6 +11,7 @@ from custom_components.ems.const import (
     CONF_SOC,
     DEFAULTS,
 )
+from custom_components.ems.driver import SungrowDriver
 from custom_components.ems.inputs import Inputs
 
 
@@ -27,15 +28,19 @@ def test_values_are_parsed_once(hass):
     assert Inputs(hass, {}).soc() is None  # not configured
 
 
-def test_inverter_reading(hass):
-    inp = Inputs(hass, dict(DEFAULTS))
-    assert not inp.inverter().ready
+def test_sungrow_reading(hass):
+    conf = dict(DEFAULTS)
+    inp = SungrowDriver(hass, conf, Inputs(hass, conf))
+    assert not inp.reading().ready
     hass.states.async_set(DEFAULTS[CONF_EMS_MODE], c.SELF_CONSUMPTION)
     hass.states.async_set(DEFAULTS[CONF_FORCED], c.FORCED_STOP)
     hass.states.async_set(DEFAULTS[CONF_DISCHARGE_MAX], "10.0", {"max": 4000})
-    reading = inp.inverter()
+    reading = inp.reading()
     assert reading.ready and reading.state == c.HOLD and reading.action_code == "h"
     assert reading.changed_at == hass.states.get(DEFAULTS[CONF_DISCHARGE_MAX]).last_changed
     assert inp.discharge_upper_w() == 4000
+    hass.states.async_set(DEFAULTS[CONF_EMS_MODE], "VPP")
+    assert inp.reading().state == "Anders (VPP / Stop (default) / 10 W)"
+    hass.states.async_set(DEFAULTS[CONF_EMS_MODE], c.SELF_CONSUMPTION)
     hass.states.async_set(DEFAULTS[CONF_DISCHARGE_MAX], "5900", {})
-    assert inp.inverter().state == c.NORMAL and inp.discharge_upper_w() == 5900
+    assert inp.reading().state == c.NORMAL and inp.discharge_upper_w() == 5900

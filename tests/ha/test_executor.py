@@ -19,6 +19,7 @@ from test_integration import ENTITIES
 from custom_components.ems import archive
 from custom_components.ems import control as c
 from custom_components.ems.adapter import PlanBlock
+from custom_components.ems.core.model import Action
 
 MODE = "select.ems_mode"
 FORCED = "select.battery_forced_charge_discharge"
@@ -94,8 +95,18 @@ def block_now(was: str, *, minutes_ago=5, length=60, kwh=0.0, spart=0.5, netz=1.
 
 def with_plan(ex, monkeypatch, blocks):
     """A current plan with these blocks (the example inputs in the test HA are from an earlier day)."""
-    attribute = {"aktionen": [b.as_attribute() for b in blocks], "slots": []}
-    plan = SimpleNamespace(attribute=attribute, blocks=blocks, computed=dt_util.now())
+    attribute = {
+        "aktionen": [b.as_attribute() for b in blocks],
+        "slots": [],
+        "wert_jetzt_ct": 20.0,
+        "wp_aktionen": [],
+    }
+    plan = SimpleNamespace(
+        plan=SimpleNamespace(now=Action.NORMAL, boost_now=False),
+        attribute=attribute,
+        blocks=blocks,
+        computed=dt_util.now(),
+    )
 
     async def calculate():
         return plan

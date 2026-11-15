@@ -24,7 +24,6 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import (
     async_call_later,
-    async_track_state_change_event,
     async_track_time_change,
 )
 from homeassistant.helpers.storage import Store
@@ -35,13 +34,13 @@ from . import control as c
 from . import switching as sw
 from .adapter import PlanBlock
 from .const import (
-    CONF_FORCED_POWER,
     CONF_NOTIFY,
     DOMAIN,
     GRID_KW_DEFAULT,
     SIGNAL_EXECUTOR,
     WEAR_CT_DEFAULT,
 )
+from .driver import InverterDriver
 from .inputs import Inputs
 from .measurement import as_number
 from .settings import NotChangeable, PlannerSettings
@@ -131,11 +130,13 @@ class Executor:
         inputs: Inputs,
         settings: PlannerSettings,
         price_now_ct: Callable[[], float | None],
+        driver: InverterDriver,
     ) -> None:
         self.hass = hass
         self.conf = conf
         self.coordinator = coordinator
         self.inputs = inputs
+        self.driver = driver
         self.settings = settings
         self._price_now_ct = price_now_ct
         """Current price in ct/kWh (PriceSource.now_ct)."""
@@ -206,7 +207,7 @@ class Executor:
         return c.Approval.from_dict(self.state["approval"])
 
     def inverter(self) -> str:
-        return self.inputs.inverter().state
+        return self.driver.reading().state
 
     def price_ct(self) -> float | None:
         price = self._price_now_ct()
@@ -228,9 +229,7 @@ class Executor:
             async_track_time_change(h, self._learn, minute=0, second=10),
             h.bus.async_listen("mobile_app_notification_action", self._notification_action),
         ]
-        self._unsub.append(
-            async_track_state_change_event(h, self.inputs.inverter_entities(), self._inverter_changed)
-        )
+        self._unsub.append(self.driver.async_listen(self._inverter_changed))
         self.evaluate()
         self._remember_meter()
         async_dispatcher_send(h, SIGNAL_EXECUTOR)
@@ -276,7 +275,7 @@ class Executor:
         async_dispatcher_send(self.hass, SIGNAL_EXECUTOR)
 
     @callback
-    def _inverter_changed(self, _event: Event) -> None:
+    def _inverter_changed(self) -> None:
         async_dispatcher_send(self.hass, SIGNAL_EXECUTOR)
 
     @callback
@@ -370,7 +369,7 @@ class Executor:
     async def _apply(self, trigger: str) -> None:
         if self.yaml_executor_running():
             return
-        reading = self.inputs.inverter()
+        reading = self.driver.reading()
         situation = sw.Situation(
             mode=self.mode,
             target=self.target,
@@ -426,26 +425,8 @@ class Executor:
             tag="ems-akku-manuell",
         )
 
-    async def _select(self, key: str, option: str) -> None:
-        data = {"entity_id": self.conf[key], "option": option}
-        await self.hass.services.async_call("select", "select_option", data, blocking=True)
-
-    async def _set(self, entity_id: str, value: float) -> None:
-        data = {"entity_id": entity_id, "value": value}
-        await self.hass.services.async_call("number", "set_value", data, blocking=True)
-
     async def _command(self, goal: str) -> None:
-        steps = sw.commands_for(
-            goal,
-            grid_kw=self.settings.grid_charge().value,
-            power_configured=bool(self.conf.get(CONF_FORCED_POWER)),
-            normal_discharge_w=self.inputs.discharge_upper_w(),
-        )
-        for step in steps:
-            if step.kind == "select":
-                await self._select(step.key, step.value)
-            else:
-                await self._set(self.conf[step.key], step.value)
+        await self.driver.async_switch(goal, grid_kw=self.settings.grid_charge().value)
 
     async def _confirmed(self, goal: str) -> bool:
         """Wait until the inverter reports the goal (at most CONFIRM_S)."""
@@ -454,7 +435,7 @@ class Executor:
         done: asyncio.Future[bool] = self.hass.loop.create_future()
 
         @callback
-        def changed(_event: Event) -> None:
+        def changed() -> None:
             if self.inverter() == goal and not done.done():
                 done.set_result(True)
 
@@ -463,7 +444,7 @@ class Executor:
             if not done.done():
                 done.set_result(False)
 
-        unsub = async_track_state_change_event(self.hass, self.inputs.inverter_entities(), changed)
+        unsub = self.driver.async_listen(changed)
         cancel = async_call_later(self.hass, CONFIRM_S, timeout)
         try:
             return await done

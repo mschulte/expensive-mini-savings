@@ -124,11 +124,15 @@ class TargetSensor(ExecutorEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         ex = self.executor
-        return {
+        attributes = {
             "plan_aktuell": ex.coordinator.plan_fresh(dt_util.now()),
             "ist": ex.inverter(),
             "gesetzt": ex.state["set_by_ems"],
         }
+        if values := ex.driver.info():
+            # Fronius: the raw storage control registers (a Sungrow shows its own entities)
+            attributes["wechselrichter_werte"] = values
+        return attributes
 
 
 class SavingsSensor(ExecutorEntity, SensorEntity):

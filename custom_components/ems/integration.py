@@ -25,8 +25,13 @@ from homeassistant.helpers.typing import ConfigType
 from .config_flow import merged_config
 from .const import (
     CONF_FEED_IN_CT,
+    CONF_FRONIUS_HOST,
+    CONF_FRONIUS_PORT,
+    CONF_FRONIUS_REVERT_S,
+    CONF_FRONIUS_UNIT,
     CONF_GRID_CHARGE_POWER,
     CONF_GRID_KW,
+    CONF_INVERTER,
     CONF_MEASUREMENT,
     CONF_NOTIFY,
     CONF_PRICES,
@@ -37,14 +42,18 @@ from .const import (
     DEFAULTS,
     DOMAIN,
     ENTITY_KEYS,
+    FRONIUS_REVERT_MAX_S,
     GRID_KW_MAX,
     GRID_KW_MIN,
+    INVERTER_FRONIUS,
+    INVERTERS,
     LEGACY_CONTROL_KEYS,
     WEAR_CT_MAX,
     WEAR_CT_MIN,
     external_input,
 )
 from .coordinator import EmsCoordinator
+from .driver import make_driver
 from .executor import Executor
 from .inputs import Inputs
 from .panel import async_register_panel, async_unregister_panel
@@ -70,26 +79,45 @@ RENAMED = {
 }
 """Plan sensors lose the '_neu' of the test phase."""
 
+
+def _fronius_needs_host(conf: dict) -> dict:
+    if conf.get(CONF_INVERTER) == INVERTER_FRONIUS and not conf.get(CONF_FRONIUS_HOST):
+        raise vol.Invalid(f"{CONF_INVERTER}: {INVERTER_FRONIUS} needs {CONF_FRONIUS_HOST}")
+    return conf
+
+
 CONFIG_SCHEMA = vol.Schema(
     {
-        DOMAIN: vol.Schema(
-            {
-                **{
-                    vol.Optional(k, default=DEFAULTS[k]) if k in DEFAULTS else vol.Optional(k): cv.entity_id
-                    for k in ENTITY_KEYS
-                },
-                vol.Optional(CONF_FEED_IN_CT, default=7.0): vol.Coerce(float),
-                vol.Optional(CONF_RECORDING, default=True): cv.boolean,
-                vol.Optional(CONF_MEASUREMENT, default=True): cv.boolean,
-                vol.Optional(CONF_NOTIFY): cv.string,
-                vol.Optional(CONF_WEAR_CT): vol.All(
-                    vol.Coerce(float), vol.Range(min=WEAR_CT_MIN, max=WEAR_CT_MAX)
-                ),
-                vol.Optional(CONF_GRID_KW): vol.All(
-                    vol.Coerce(float), vol.Range(min=GRID_KW_MIN, max=GRID_KW_MAX)
-                ),
-                **{vol.Optional(k): cv.entity_id for k in LEGACY_CONTROL_KEYS},
-            }
+        DOMAIN: vol.All(
+            vol.Schema(
+                {
+                    **{
+                        vol.Optional(k, default=DEFAULTS[k])
+                        if k in DEFAULTS
+                        else vol.Optional(k): cv.entity_id
+                        for k in ENTITY_KEYS
+                    },
+                    vol.Optional(CONF_FEED_IN_CT, default=7.0): vol.Coerce(float),
+                    vol.Optional(CONF_RECORDING, default=True): cv.boolean,
+                    vol.Optional(CONF_MEASUREMENT, default=True): cv.boolean,
+                    vol.Optional(CONF_NOTIFY): cv.string,
+                    vol.Optional(CONF_INVERTER): vol.In(INVERTERS),
+                    vol.Optional(CONF_FRONIUS_HOST): cv.string,
+                    vol.Optional(CONF_FRONIUS_PORT): cv.port,
+                    vol.Optional(CONF_FRONIUS_UNIT): vol.All(vol.Coerce(int), vol.Range(min=0, max=255)),
+                    vol.Optional(CONF_FRONIUS_REVERT_S): vol.All(
+                        vol.Coerce(int), vol.Range(min=0, max=FRONIUS_REVERT_MAX_S)
+                    ),
+                    vol.Optional(CONF_WEAR_CT): vol.All(
+                        vol.Coerce(float), vol.Range(min=WEAR_CT_MIN, max=WEAR_CT_MAX)
+                    ),
+                    vol.Optional(CONF_GRID_KW): vol.All(
+                        vol.Coerce(float), vol.Range(min=GRID_KW_MIN, max=GRID_KW_MAX)
+                    ),
+                    **{vol.Optional(k): cv.entity_id for k in LEGACY_CONTROL_KEYS},
+                }
+            ),
+            _fronius_needs_host,
         )
     },
     extra=vol.ALLOW_EXTRA,
@@ -140,7 +168,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         return executor.target, executor.target_since
 
     coordinator = EmsCoordinator(hass, conf, entry, inputs, settings, prices, running)
-    executor = Executor(hass, conf, coordinator, inputs, settings, prices.now_ct)
+    driver = make_driver(hass, conf, inputs)
+    executor = Executor(hass, conf, coordinator, inputs, settings, prices.now_ct, driver)
     await executor.async_load()  # binds the stored settings before the first plan
     entry.runtime_data = EmsRuntime(conf, coordinator, executor, settings)
     _register_services(hass)
@@ -166,6 +195,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         executor.start()
 
     entry.async_on_unload(executor.stop)
+    await driver.async_start()
+    entry.async_on_unload(driver.async_stop)
     if hass.is_running:
         await coordinator.async_refresh()
         start_executor()
@@ -176,7 +207,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if conf.get(CONF_MEASUREMENT):
         # after the first plan when HA is already running (reload), so the first quarter hour has a price;
         # on an HA start the first plan only comes at EVENT_HOMEASSISTANT_STARTED (then no price with Tibber)
-        measurement = MeasurementRecorder(hass, conf, inputs, prices.now_ct, coordinator.planned)
+        measurement = MeasurementRecorder(hass, conf, inputs, prices.now_ct, coordinator.planned, driver)
         measurement.begin()
         entry.async_on_unload(measurement.stop)
 

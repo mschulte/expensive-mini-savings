@@ -10,13 +10,14 @@ The name is honest: on a 10 kWh battery with a dynamic tariff the savings are re
 
 > **Status: early, built for one house.** Tested with a Sungrow SH15T hybrid inverter and SBH100
 > battery (via the [mkaiser Modbus integration](https://github.com/mkaiser/Sungrow-SHx-Inverter-Modbus-Home-Assistant)),
-> Tibber 15-minute prices and the Helios PV forecast. Other setups work if they provide the [inputs](#inputs)
-> in the same format.
+> Tibber 15-minute prices and the Helios PV forecast. A **Fronius GEN24** with BYD battery can be switched
+> directly over Modbus TCP (see [Fronius GEN24](#fronius-gen24)). Other setups work if they provide the
+> [inputs](#inputs) in the same format.
 
 - **Plans, and switches only if you let it.** Three modes: *Nur planen* (default: nothing is written to your
   devices), *Mit Freigabe* (each planned intervention needs your approval, by push or in the app) and
-  *Automatisch*. Switching uses the Sungrow Modbus entities; settings that did not come from the EMS (vendor
-  app, VPP, by hand) are never overridden.
+  *Automatisch*. Switching uses the Sungrow Modbus entities or, for a Fronius GEN24, Modbus TCP directly;
+  settings that did not come from the EMS (vendor app, VPP, by hand) are never overridden.
 - **German names.** Configuration keys (`preise`, `soc`, …), attribute names and the states and reasons
   shown in Home Assistant are German, because the author's automations and dashboard depend on them.
   The setup dialog is translated (English, German).
@@ -62,6 +63,9 @@ custom_components/ems/        the Home Assistant integration (copy this folder t
   recorder.py, measurement.py measurements per quarter hour → /config/ems/messung/
   sensor.py                   plan, value of one kWh, heat pump plan; executor sensors
   control.py, executor.py     executor: rules (no HA) and the part that switches, asks, books, logs
+  driver.py                   inverter drivers: Sungrow (entities), Fronius (Modbus TCP)
+  inverter.py, switching.py   Sungrow: classification of the setting, commands (no HA)
+  fronius.py, modbus_tcp.py   Fronius: SunSpec storage model 124, register writes; minimal Modbus client (no HA)
   select.py, binary_sensor.py, number.py, button.py   mode, approval pending, settings, approve/reject
   panel.py, history.py        the app: sidebar panel, websocket commands, plan against reality
 backtest/                     not part of the integration
@@ -163,6 +167,55 @@ keeps charging); grid charge = forced mode, forced charge at the grid charge pow
 with the discharge limit back at its maximum. Every command is checked after 60 s. Blocks are run from 30 min
 (hold) / 15 min (grid charge) and 5 ct savings, grid charging stops at 98 %, a plan older than 30 min means
 normal operation. A finished block books the plan's savings for it, scaled by the measured quantity.
+
+### Fronius GEN24
+
+With `wechselrichter: fronius` the EMS talks to the inverter itself over Modbus TCP (SunSpec storage model
+124); no other integration is needed for switching. Register map and write order follow the
+`fronius-modbus` backend of [batcontrol](https://github.com/MaStr/batcontrol) (MIT).
+
+| Action | Registers |
+|---|---|
+| normal | `StorCtl_Mod = 0` (the Fronius battery management decides) |
+| hold | `StorCtl_Mod = 2`, `OutWRte = 0 %`: no discharge, PV surplus keeps charging |
+| grid charge | `ChaGriSet = 1`, `StorCtl_Mod = 2`, `OutWRte = −x %` of `WChaMax` (the grid charge power) |
+
+```yaml
+ems:
+  wechselrichter: fronius
+  fronius_host: 192.168.1.50        # IP of the GEN24
+  # fronius_port: 502
+  # fronius_unit_id: 1
+  # fronius_ruecksetzen_s: 900      # revert timer, see below (default 0 = off)
+  soc: sensor.battery_state_of_charge   # your SoC sensor (example name), see the note on SoC
+  # measurements and meters (last_leistung, akku_leistung, akku_ladung, netzbezug, …) from the Fronius
+  # integration; the Sungrow defaults do not exist on a Fronius setup
+```
+
+Or in the dialog: step *Steuerung*, inverter *Fronius GEN24*.
+
+**Before switching on** (*Mit Freigabe* or *Automatisch*):
+
+1. In the Fronius web UI under *Communication → Modbus*: enable *Modbus server via TCP*, *Inverter control
+   via Modbus*, and set *SunSpec model type* to **int + SF**. The EMS checks the model layout at start and
+   never writes if it does not match.
+2. **Only one program may control the battery.** Stop batcontrol (or any other tool) for good. Its web-API
+   backend writes time-of-use rules into the Fronius: check *Battery management → Time-dependent battery
+   control* and remove leftover rules, otherwise the battery keeps following them while the EMS reports
+   *Eigenverbrauch*. After another tool wrote the Modbus registers, restart the inverter once.
+3. Run a few days in *Nur planen* and compare the plan with what batcontrol did, then *Mit Freigabe*.
+4. `sensor.ems_akku_soll` shows the raw registers in `wechselrichter_werte`; `ist` is what the EMS reads.
+
+**Revert timer** (`fronius_ruecksetzen_s`): with a value > 0 the inverter drops hold and grid charge by
+itself after that time if no new command arrives (e.g. Home Assistant is down). The EMS rewrites a running
+block after half the time. Try it with the battery watched: the timer's behaviour comes from the SunSpec
+specification and has not been verified on every firmware.
+
+**SoC and reserve:** the planner expects `soc` in the usable range (0 % = the battery's minimum). If your
+sensor shows the absolute SoC of the BYD, point `reserve` to an entity holding the minimum SoC set in the
+Fronius, so the plan never counts on energy below it.
+The efficiencies in `core/model.py` are the Sungrow's; calibrate them for the GEN24
+([Calibrating](#calibrating-to-your-own-system)).
 
 ### App
 

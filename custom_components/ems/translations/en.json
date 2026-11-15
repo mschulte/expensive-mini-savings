@@ -44,13 +44,26 @@
           "ablehnen": "Script: reject",
           "ersparnis": "Measured savings (sensor in EUR, attribute aktionen)",
           "ersparnis_prognose": "Forecast savings (sensor in EUR)",
-          "protokoll": "Log (sensor, attribute eintraege)"
+          "protokoll": "Log (sensor, attribute eintraege)",
+          "wechselrichter": "Inverter that switches the battery",
+          "fronius_host": "Fronius: IP address or host name (Modbus TCP)",
+          "fronius_port": "Fronius: Modbus port",
+          "fronius_unit_id": "Fronius: Modbus unit ID (inverter, usually 1)",
+          "fronius_ruecksetzen_s": "Fronius: revert timer in s (0 = off)",
+          "benachrichtigung": "Push notification (e.g. notify.mobile_app_phone)"
+        },
+        "data_description": {
+          "wechselrichter": "Sungrow: through the entities of the Sungrow Modbus integration. Fronius GEN24: directly over Modbus TCP; in the Fronius under Communication → Modbus enable \"Modbus server via TCP\", \"Inverter control via Modbus\" and set \"int + SF\". No other program (e.g. batcontrol) may control the battery at the same time.",
+          "fronius_ruecksetzen_s": "If Home Assistant fails, the Fronius drops hold and grid charge by itself after this time. The EMS rewrites in time."
         }
       }
     },
     "abort": {
       "already_configured": "Expensive Mini Savings is already set up.",
       "single_instance_allowed": "Expensive Mini Savings is already set up."
+    },
+    "error": {
+      "fronius_host": "The Fronius needs an IP address or host name."
     }
   },
   "options": {
@@ -98,12 +111,25 @@
           "ablehnen": "Script: reject",
           "ersparnis": "Measured savings (sensor in EUR, attribute aktionen)",
           "ersparnis_prognose": "Forecast savings (sensor in EUR)",
-          "protokoll": "Log (sensor, attribute eintraege)"
+          "protokoll": "Log (sensor, attribute eintraege)",
+          "wechselrichter": "Inverter that switches the battery",
+          "fronius_host": "Fronius: IP address or host name (Modbus TCP)",
+          "fronius_port": "Fronius: Modbus port",
+          "fronius_unit_id": "Fronius: Modbus unit ID (inverter, usually 1)",
+          "fronius_ruecksetzen_s": "Fronius: revert timer in s (0 = off)",
+          "benachrichtigung": "Push notification (e.g. notify.mobile_app_phone)"
+        },
+        "data_description": {
+          "wechselrichter": "Sungrow: through the entities of the Sungrow Modbus integration. Fronius GEN24: directly over Modbus TCP; in the Fronius under Communication → Modbus enable \"Modbus server via TCP\", \"Inverter control via Modbus\" and set \"int + SF\". No other program (e.g. batcontrol) may control the battery at the same time.",
+          "fronius_ruecksetzen_s": "If Home Assistant fails, the Fronius drops hold and grid charge by itself after this time. The EMS rewrites in time."
         }
       }
     },
     "abort": {
       "yaml": "This entry comes from configuration.yaml (`ems:`), which takes precedence. Current settings:\n\n{settings}\n\nTo change them, edit configuration.yaml and restart. To manage them here instead, remove `ems:` from configuration.yaml."
+    },
+    "error": {
+      "fronius_host": "The Fronius needs an IP address or host name."
     }
   },
   "services": {
@@ -122,6 +148,14 @@
     "prognose_zuruecksetzen": {
       "name": "Reset forecast",
       "description": "Sets the forecast sum to 0; the comparison with the measured savings starts anew."
+    }
+  },
+  "selector": {
+    "wechselrichter": {
+      "options": {
+        "sungrow": "Sungrow (Modbus integration)",
+        "fronius": "Fronius GEN24 (Modbus TCP directly)"
+      }
     }
   }
 }
