@@ -36,7 +36,12 @@ async def setup_fronius(hass, set_states, tmp_path, **extra):
         for k, v in ENTITIES.items()
         if k not in ("verschleiss", "netzladeleistung", "soll", "lastprofil")
     }
-    fronius = {"wechselrichter": "fronius", "fronius_host": "192.0.2.10", **extra}
+    fronius = {
+        "wechselrichter": "fronius",
+        "fronius_host": "192.0.2.10",
+        "soc": "sensor.battery_level",
+        **extra,
+    }
     assert await async_setup_component(
         hass, "ems", {"ems": {**conf, **fronius, "aufzeichnung": False, "messung": False}}
     )
@@ -166,25 +171,66 @@ async def test_fronius_needs_a_host(hass, tmp_path):
     assert not await async_setup_component(hass, "ems", {"ems": {"wechselrichter": "fronius"}})
 
 
+def _schema_keys(flow) -> set[str]:
+    return {str(k) for k in flow["data_schema"].schema}
+
+
 async def test_dialog_sets_up_the_fronius(hass, set_states, tmp_path, sim):
     hass.config.config_dir = str(tmp_path)
     await hass.config.async_set_time_zone("Europe/Berlin")
     set_states(**{"sensor.battery_level": "45.0"})
     flow = await hass.config_entries.flow.async_init("ems", context={"source": config_entries.SOURCE_USER})
+    assert flow["step_id"] == "user"
+    flow = await hass.config_entries.flow.async_configure(flow["flow_id"], {"wechselrichter": "fronius"})
+    assert flow["step_id"] == "fronius"
+    flow = await hass.config_entries.flow.async_configure(
+        flow["flow_id"],
+        {"fronius_host": " ", "fronius_port": 502, "fronius_unit_id": 1, "fronius_ruecksetzen_s": 0},
+    )
+    assert flow["step_id"] == "fronius" and flow["errors"] == {"fronius_host": "fronius_host"}
+    flow = await hass.config_entries.flow.async_configure(
+        flow["flow_id"],
+        {
+            "fronius_host": " 192.0.2.10 ",
+            "fronius_port": 502.0,
+            "fronius_unit_id": 1.0,
+            "fronius_ruecksetzen_s": 0,
+        },
+    )
+    assert flow["step_id"] == "planner"
     flow = await hass.config_entries.flow.async_configure(
         flow["flow_id"], {"soc": "sensor.battery_level", "einspeisung_ct": 7.0, "aufzeichnung": False}
     )
+    assert flow["step_id"] == "measurement"
+    assert not _schema_keys(flow) & {"ems_modus", "erzwungen", "entladen_max"}  # Sungrow only
     flow = await hass.config_entries.flow.async_configure(flow["flow_id"], {"messung": False})
     assert flow["step_id"] == "control"
-    flow = await hass.config_entries.flow.async_configure(flow["flow_id"], {"wechselrichter": "fronius"})
-    assert flow["type"] is FlowResultType.FORM and flow["errors"] == {"fronius_host": "fronius_host"}
-    flow = await hass.config_entries.flow.async_configure(
-        flow["flow_id"],
-        {"wechselrichter": "fronius", "fronius_host": " 192.0.2.10 ", "fronius_port": 502.0},
-    )
+    assert "ladeleistung_erzwungen" not in _schema_keys(flow)
+    flow = await hass.config_entries.flow.async_configure(flow["flow_id"], {})
     assert flow["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
     (entry,) = hass.config_entries.async_entries("ems")
     assert entry.data["fronius_host"] == "192.0.2.10" and entry.data["fronius_port"] == 502
+    conf = entry.runtime_data.conf
+    assert "ems_modus" not in conf and "akku_ladung" not in conf  # no Sungrow defaults
     assert isinstance(entry.runtime_data.executor.driver, drv.FroniusDriver)
     assert entry.runtime_data.executor.inverter() == c.NORMAL
+
+
+async def test_sungrow_defaults_only_for_a_sungrow(hass, set_states, tmp_path, sim):
+    ex = await setup_fronius(hass, set_states, tmp_path)
+    conf = ex.conf
+    assert conf["soc"] == "sensor.battery_level"  # configured, not a default
+    for key in ("ems_modus", "erzwungen", "entladen_max", "ladeleistung_erzwungen", "kapazitaet"):
+        assert key not in conf
+
+
+async def test_sungrow_keys_are_ignored_for_a_fronius(hass, set_states, tmp_path, sim):
+    ex = await setup_fronius(hass, set_states, tmp_path, ems_modus="select.something")
+    assert "ems_modus" not in ex.conf
+
+
+async def test_fronius_needs_the_state_of_charge(hass, tmp_path):
+    hass.config.config_dir = str(tmp_path)
+    conf = {"wechselrichter": "fronius", "fronius_host": "192.0.2.10"}
+    assert not await async_setup_component(hass, "ems", {"ems": conf})

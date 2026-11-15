@@ -5,7 +5,7 @@
       aufzeichnung: true     # write inputs hourly to /config/ems/aufzeichnung/
       messung: true          # write measurements per quarter hour to /config/ems/messung/
 
-Input entities: keys see const.ENTITY_KEYS, defaults const.DEFAULTS.
+Input entities: keys see const.ENTITY_KEYS; for a Sungrow the defaults are const.DEFAULTS.
 YAML is imported into the config entry on every start and takes precedence over options set in the dialog.
 """
 
@@ -36,10 +36,10 @@ from .const import (
     CONF_NOTIFY,
     CONF_PRICES,
     CONF_RECORDING,
+    CONF_SOC,
     CONF_TARGET,
     CONF_WEAR,
     CONF_WEAR_CT,
-    DEFAULTS,
     DOMAIN,
     ENTITY_KEYS,
     FRONIUS_REVERT_MAX_S,
@@ -81,8 +81,11 @@ RENAMED = {
 
 
 def _fronius_needs_host(conf: dict) -> dict:
-    if conf.get(CONF_INVERTER) == INVERTER_FRONIUS and not conf.get(CONF_FRONIUS_HOST):
-        raise vol.Invalid(f"{CONF_INVERTER}: {INVERTER_FRONIUS} needs {CONF_FRONIUS_HOST}")
+    """A Fronius has no entity defaults: it needs its address and the state of charge."""
+    if conf.get(CONF_INVERTER) == INVERTER_FRONIUS:
+        for key in (CONF_FRONIUS_HOST, CONF_SOC):
+            if not conf.get(key):
+                raise vol.Invalid(f"{CONF_INVERTER}: {INVERTER_FRONIUS} needs {key}")
     return conf
 
 
@@ -91,12 +94,8 @@ CONFIG_SCHEMA = vol.Schema(
         DOMAIN: vol.All(
             vol.Schema(
                 {
-                    **{
-                        vol.Optional(k, default=DEFAULTS[k])
-                        if k in DEFAULTS
-                        else vol.Optional(k): cv.entity_id
-                        for k in ENTITY_KEYS
-                    },
+                    # entity defaults depend on the inverter: const.with_inverter_defaults (merged_config)
+                    **{vol.Optional(k): cv.entity_id for k in ENTITY_KEYS},
                     vol.Optional(CONF_FEED_IN_CT, default=7.0): vol.Coerce(float),
                     vol.Optional(CONF_RECORDING, default=True): cv.boolean,
                     vol.Optional(CONF_MEASUREMENT, default=True): cv.boolean,

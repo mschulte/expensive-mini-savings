@@ -92,8 +92,8 @@ Releases: bump `version` in `custom_components/ems/manifest.json` and push a tag
 ## Setup
 
 Either in the UI: **Settings → Devices & services → Add integration → Expensive Mini Savings**. The dialog
-asks for the input entities (only the state of charge is required) and the recording options;
-change them later with *Configure*.
+asks first for the inverter (Sungrow, or Fronius GEN24 with its address), then for the input entities (only
+the state of charge is required) and the recording options; change them later with *Configure*.
 
 Or in `configuration.yaml` (imported into the same entry on every start; YAML then takes precedence and
 *Configure* only shows the settings):
@@ -112,7 +112,10 @@ ems:
 ### Inputs
 
 Only `soc` is required; every other input falls back to the value in the last column.
-Defaults exist only for the entities the mkaiser Sungrow integration creates.
+Defaults exist only for the entities the mkaiser Sungrow integration creates, and only with
+`wechselrichter: sungrow` (the default). A Fronius setup has no entity defaults: set every input you use;
+the Sungrow switching entities (`ems_modus`, `erzwungen`, `entladen_max`, `ladeleistung_erzwungen`) are
+ignored there.
 
 | Key | What | Format | Default entity | Without it |
 |---|---|---|---|---|
@@ -192,7 +195,7 @@ ems:
   # integration; the Sungrow defaults do not exist on a Fronius setup
 ```
 
-Or in the dialog: step *Steuerung*, inverter *Fronius GEN24*.
+Or in the dialog: first step *Wechselrichter* → *Fronius GEN24*, then its address.
 
 **Before switching on** (*Mit Freigabe* or *Automatisch*):
 

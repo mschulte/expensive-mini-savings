@@ -2,6 +2,29 @@
   "config": {
     "step": {
       "user": {
+        "title": "Inverter",
+        "description": "Which inverter switches the battery? This decides which entities the EMS suggests and needs.",
+        "data": {
+          "wechselrichter": "Inverter"
+        },
+        "data_description": {
+          "wechselrichter": "Sungrow: through the entities of the Sungrow Modbus integration (with default entities). Fronius GEN24: directly over Modbus TCP, no default entities."
+        }
+      },
+      "fronius": {
+        "title": "Fronius GEN24",
+        "description": "In the Fronius under Communication → Modbus enable \"Modbus server via TCP\" and \"Inverter control via Modbus\" and set \"int + SF\". No other program (e.g. batcontrol) may control the battery at the same time.",
+        "data": {
+          "fronius_host": "IP address or host name",
+          "fronius_port": "Modbus port",
+          "fronius_unit_id": "Modbus unit ID (usually 1)",
+          "fronius_ruecksetzen_s": "Revert timer in s (0 = off)"
+        },
+        "data_description": {
+          "fronius_ruecksetzen_s": "If Home Assistant fails, the Fronius drops hold and grid charge by itself after this time. The EMS rewrites in time."
+        }
+      },
+      "planner": {
         "title": "Planner inputs",
         "description": "Prices, PV forecast, consumption and battery. Only the state of charge is required; without a price entity the prices come from the Tibber integration.",
         "data": {
@@ -45,16 +68,7 @@
           "ersparnis": "Measured savings (sensor in EUR, attribute aktionen)",
           "ersparnis_prognose": "Forecast savings (sensor in EUR)",
           "protokoll": "Log (sensor, attribute eintraege)",
-          "wechselrichter": "Inverter that switches the battery",
-          "fronius_host": "Fronius: IP address or host name (Modbus TCP)",
-          "fronius_port": "Fronius: Modbus port",
-          "fronius_unit_id": "Fronius: Modbus unit ID (inverter, usually 1)",
-          "fronius_ruecksetzen_s": "Fronius: revert timer in s (0 = off)",
           "benachrichtigung": "Push notification (e.g. notify.mobile_app_phone)"
-        },
-        "data_description": {
-          "wechselrichter": "Sungrow: through the entities of the Sungrow Modbus integration. Fronius GEN24: directly over Modbus TCP; in the Fronius under Communication → Modbus enable \"Modbus server via TCP\", \"Inverter control via Modbus\" and set \"int + SF\". No other program (e.g. batcontrol) may control the battery at the same time.",
-          "fronius_ruecksetzen_s": "If Home Assistant fails, the Fronius drops hold and grid charge by itself after this time. The EMS rewrites in time."
         }
       }
     },
@@ -69,6 +83,29 @@
   "options": {
     "step": {
       "init": {
+        "title": "Inverter",
+        "description": "Which inverter switches the battery? This decides which entities the EMS suggests and needs.",
+        "data": {
+          "wechselrichter": "Inverter"
+        },
+        "data_description": {
+          "wechselrichter": "Sungrow: through the entities of the Sungrow Modbus integration (with default entities). Fronius GEN24: directly over Modbus TCP, no default entities."
+        }
+      },
+      "fronius": {
+        "title": "Fronius GEN24",
+        "description": "In the Fronius under Communication → Modbus enable \"Modbus server via TCP\" and \"Inverter control via Modbus\" and set \"int + SF\". No other program (e.g. batcontrol) may control the battery at the same time.",
+        "data": {
+          "fronius_host": "IP address or host name",
+          "fronius_port": "Modbus port",
+          "fronius_unit_id": "Modbus unit ID (usually 1)",
+          "fronius_ruecksetzen_s": "Revert timer in s (0 = off)"
+        },
+        "data_description": {
+          "fronius_ruecksetzen_s": "If Home Assistant fails, the Fronius drops hold and grid charge by itself after this time. The EMS rewrites in time."
+        }
+      },
+      "planner": {
         "title": "Planner inputs",
         "description": "Prices, PV forecast, consumption and battery. Only the state of charge is required; without a price entity the prices come from the Tibber integration.",
         "data": {
@@ -112,16 +149,7 @@
           "ersparnis": "Measured savings (sensor in EUR, attribute aktionen)",
           "ersparnis_prognose": "Forecast savings (sensor in EUR)",
           "protokoll": "Log (sensor, attribute eintraege)",
-          "wechselrichter": "Inverter that switches the battery",
-          "fronius_host": "Fronius: IP address or host name (Modbus TCP)",
-          "fronius_port": "Fronius: Modbus port",
-          "fronius_unit_id": "Fronius: Modbus unit ID (inverter, usually 1)",
-          "fronius_ruecksetzen_s": "Fronius: revert timer in s (0 = off)",
           "benachrichtigung": "Push notification (e.g. notify.mobile_app_phone)"
-        },
-        "data_description": {
-          "wechselrichter": "Sungrow: through the entities of the Sungrow Modbus integration. Fronius GEN24: directly over Modbus TCP; in the Fronius under Communication → Modbus enable \"Modbus server via TCP\", \"Inverter control via Modbus\" and set \"int + SF\". No other program (e.g. batcontrol) may control the battery at the same time.",
-          "fronius_ruecksetzen_s": "If Home Assistant fails, the Fronius drops hold and grid charge by itself after this time. The EMS rewrites in time."
         }
       }
     },

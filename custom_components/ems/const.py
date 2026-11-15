@@ -128,9 +128,25 @@ from the Tibber integration (action tibber.get_prices)."""
 
 FRONIUS_KEYS = (CONF_FRONIUS_HOST, CONF_FRONIUS_PORT, CONF_FRONIUS_UNIT, CONF_FRONIUS_REVERT_S)
 
-OPTION_DEFAULTS = {**DEFAULTS, CONF_FEED_IN_CT: 7.0, CONF_RECORDING: True, CONF_MEASUREMENT: True}
-"""The inverter keys have no defaults here (driver.make_driver applies them), so a Sungrow setup shows no
-Fronius settings in the app."""
+OPTION_DEFAULTS = {CONF_FEED_IN_CT: 7.0, CONF_RECORDING: True, CONF_MEASUREMENT: True}
+"""Defaults of the non-entity options. The entity defaults (DEFAULTS) depend on the inverter, see
+with_inverter_defaults; the Fronius connection defaults are applied by driver.make_driver."""
+
+SUNGROW_ONLY_KEYS = (CONF_EMS_MODE, CONF_FORCED, CONF_DISCHARGE_MAX, CONF_FORCED_POWER)
+"""Entities only the Sungrow driver reads and switches."""
+
+
+def inverter_of(conf: dict) -> str:
+    return conf.get(CONF_INVERTER) or INVERTER_SUNGROW
+
+
+def with_inverter_defaults(conf: dict) -> dict:
+    """The configuration with the entity defaults of its inverter: the mkaiser entity IDs for a Sungrow
+    (the default when no inverter is set), none for a Fronius, whose Sungrow-only keys are dropped."""
+    if inverter_of(conf) == INVERTER_SUNGROW:
+        return {**DEFAULTS, **conf}
+    return {k: v for k, v in conf.items() if k not in SUNGROW_ONLY_KEYS}
+
 
 SIGNAL_EXECUTOR = f"{DOMAIN}_executor_update"
 """Dispatcher signal: the executor's state changed (entities update)."""

@@ -2,6 +2,29 @@
   "config": {
     "step": {
       "user": {
+        "title": "Wechselrichter",
+        "description": "Welcher Wechselrichter schaltet den Akku? Davon hängt ab, welche Entitäten das EMS vorschlägt und braucht.",
+        "data": {
+          "wechselrichter": "Wechselrichter"
+        },
+        "data_description": {
+          "wechselrichter": "Sungrow: über die Entitäten der Sungrow-Modbus-Integration (mit Standard-Entitäten). Fronius GEN24: direkt per Modbus TCP, ohne Standard-Entitäten."
+        }
+      },
+      "fronius": {
+        "title": "Fronius GEN24",
+        "description": "Im Fronius unter Kommunikation → Modbus „Modbus-Server über TCP“ und „Wechselrichter-Steuerung über Modbus“ einschalten und „int + SF“ einstellen. Kein anderes Programm (z. B. batcontrol) darf den Akku gleichzeitig steuern.",
+        "data": {
+          "fronius_host": "IP-Adresse oder Hostname",
+          "fronius_port": "Modbus-Port",
+          "fronius_unit_id": "Modbus-Geräte-ID (meist 1)",
+          "fronius_ruecksetzen_s": "Rückfall-Timer in s (0 = aus)"
+        },
+        "data_description": {
+          "fronius_ruecksetzen_s": "Fällt Home Assistant aus, hebt der Fronius Halten und Netzladen nach dieser Zeit selbst auf. Das EMS schreibt rechtzeitig neu."
+        }
+      },
+      "planner": {
         "title": "Eingaben des Planers",
         "description": "Preise, PV-Prognose, Verbrauch und Akku. Nötig ist nur der Akkustand; ohne Preis-Entität kommen die Preise von der Tibber-Integration.",
         "data": {
@@ -45,16 +68,7 @@
           "ersparnis": "Gemessene Ersparnis (Sensor in EUR, Attribut aktionen)",
           "ersparnis_prognose": "Prognostizierte Ersparnis (Sensor in EUR)",
           "protokoll": "Protokoll (Sensor, Attribut eintraege)",
-          "wechselrichter": "Wechselrichter, der den Akku schaltet",
-          "fronius_host": "Fronius: IP-Adresse oder Hostname (Modbus TCP)",
-          "fronius_port": "Fronius: Modbus-Port",
-          "fronius_unit_id": "Fronius: Modbus-Geräte-ID (Wechselrichter, meist 1)",
-          "fronius_ruecksetzen_s": "Fronius: Rückfall-Timer in s (0 = aus)",
           "benachrichtigung": "Push-Benachrichtigung (z. B. notify.mobile_app_handy)"
-        },
-        "data_description": {
-          "wechselrichter": "Sungrow: über die Entitäten der Sungrow-Modbus-Integration. Fronius GEN24: direkt per Modbus TCP; im Fronius unter Kommunikation → Modbus „Modbus-Server über TCP“, „Wechselrichter-Steuerung über Modbus“ und „int + SF“ einstellen. Kein anderes Programm (z. B. batcontrol) darf den Akku gleichzeitig steuern.",
-          "fronius_ruecksetzen_s": "Fällt Home Assistant aus, hebt der Fronius Halten und Netzladen nach dieser Zeit selbst auf. Das EMS schreibt rechtzeitig neu."
         }
       }
     },
@@ -69,6 +83,29 @@
   "options": {
     "step": {
       "init": {
+        "title": "Wechselrichter",
+        "description": "Welcher Wechselrichter schaltet den Akku? Davon hängt ab, welche Entitäten das EMS vorschlägt und braucht.",
+        "data": {
+          "wechselrichter": "Wechselrichter"
+        },
+        "data_description": {
+          "wechselrichter": "Sungrow: über die Entitäten der Sungrow-Modbus-Integration (mit Standard-Entitäten). Fronius GEN24: direkt per Modbus TCP, ohne Standard-Entitäten."
+        }
+      },
+      "fronius": {
+        "title": "Fronius GEN24",
+        "description": "Im Fronius unter Kommunikation → Modbus „Modbus-Server über TCP“ und „Wechselrichter-Steuerung über Modbus“ einschalten und „int + SF“ einstellen. Kein anderes Programm (z. B. batcontrol) darf den Akku gleichzeitig steuern.",
+        "data": {
+          "fronius_host": "IP-Adresse oder Hostname",
+          "fronius_port": "Modbus-Port",
+          "fronius_unit_id": "Modbus-Geräte-ID (meist 1)",
+          "fronius_ruecksetzen_s": "Rückfall-Timer in s (0 = aus)"
+        },
+        "data_description": {
+          "fronius_ruecksetzen_s": "Fällt Home Assistant aus, hebt der Fronius Halten und Netzladen nach dieser Zeit selbst auf. Das EMS schreibt rechtzeitig neu."
+        }
+      },
+      "planner": {
         "title": "Eingaben des Planers",
         "description": "Preise, PV-Prognose, Verbrauch und Akku. Nötig ist nur der Akkustand; ohne Preis-Entität kommen die Preise von der Tibber-Integration.",
         "data": {
@@ -112,16 +149,7 @@
           "ersparnis": "Gemessene Ersparnis (Sensor in EUR, Attribut aktionen)",
           "ersparnis_prognose": "Prognostizierte Ersparnis (Sensor in EUR)",
           "protokoll": "Protokoll (Sensor, Attribut eintraege)",
-          "wechselrichter": "Wechselrichter, der den Akku schaltet",
-          "fronius_host": "Fronius: IP-Adresse oder Hostname (Modbus TCP)",
-          "fronius_port": "Fronius: Modbus-Port",
-          "fronius_unit_id": "Fronius: Modbus-Geräte-ID (Wechselrichter, meist 1)",
-          "fronius_ruecksetzen_s": "Fronius: Rückfall-Timer in s (0 = aus)",
           "benachrichtigung": "Push-Benachrichtigung (z. B. notify.mobile_app_handy)"
-        },
-        "data_description": {
-          "wechselrichter": "Sungrow: über die Entitäten der Sungrow-Modbus-Integration. Fronius GEN24: direkt per Modbus TCP; im Fronius unter Kommunikation → Modbus „Modbus-Server über TCP“, „Wechselrichter-Steuerung über Modbus“ und „int + SF“ einstellen. Kein anderes Programm (z. B. batcontrol) darf den Akku gleichzeitig steuern.",
-          "fronius_ruecksetzen_s": "Fällt Home Assistant aus, hebt der Fronius Halten und Netzladen nach dieser Zeit selbst auf. Das EMS schreibt rechtzeitig neu."
         }
       }
     },

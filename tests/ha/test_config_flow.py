@@ -21,6 +21,8 @@ async def test_dialog_creates_entry_with_defaults(hass, freezer, set_states, now
     await _prepare(hass, freezer, set_states, now, tmp_path)
     result = await hass.config_entries.flow.async_init("ems", context={"source": config_entries.SOURCE_USER})
     assert result["type"] is FlowResultType.FORM and result["step_id"] == "user"
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"wechselrichter": "sungrow"})
+    assert result["step_id"] == "planner"
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
         {
@@ -103,6 +105,10 @@ async def test_options_change_reloads(hass, freezer, set_states, now, tmp_path):
     await hass.async_block_till_done()
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert result["step_id"] == "init"
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"wechselrichter": "sungrow"}
+    )
+    assert result["step_id"] == "planner"
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {

@@ -55,6 +55,9 @@ from .const import (
     OPTION_DEFAULTS,
     PLANNER_KEYS,
     REQUIRED_KEYS,
+    SUNGROW_ONLY_KEYS,
+    inverter_of,
+    with_inverter_defaults,
 )
 
 TITLE = "Expensive Mini Savings"
@@ -85,11 +88,17 @@ DOMAINS = {
 }
 
 
-def merged_config(entry: ConfigEntry) -> dict[str, Any]:
-    """Effective configuration: defaults ← entry data ← options. For an entry imported from
-    configuration.yaml the YAML wins, options are ignored."""
+def _raw_config(entry: ConfigEntry) -> dict[str, Any]:
+    """defaults ← entry data ← options, without the inverter's entity defaults."""
     options = {} if entry.source == SOURCE_IMPORT else dict(entry.options)
     return {**OPTION_DEFAULTS, **entry.data, **options}
+
+
+def merged_config(entry: ConfigEntry) -> dict[str, Any]:
+    """Effective configuration: defaults ← entry data ← options, plus the entity defaults of the chosen
+    inverter (const.with_inverter_defaults). For an entry imported from configuration.yaml the YAML wins,
+    options are ignored."""
+    return with_inverter_defaults(_raw_config(entry))
 
 
 def format_settings(conf: dict[str, Any]) -> str:
@@ -130,20 +139,23 @@ def _planner_schema() -> vol.Schema:
     return vol.Schema(fields)
 
 
-def _measurement_schema() -> vol.Schema:
+def _for_inverter(keys: tuple[str, ...], inverter: str) -> list[str]:
+    """The keys that apply to an inverter: a Fronius has no Sungrow switching entities."""
+    return [k for k in keys if inverter == INVERTER_SUNGROW or k not in SUNGROW_ONLY_KEYS]
+
+
+def _measurement_schema(inverter: str) -> vol.Schema:
     fields: dict[Any, Any] = {vol.Required(CONF_MEASUREMENT): selector.BooleanSelector()}
-    for key in MEASUREMENT_KEYS:
+    for key in _for_inverter(MEASUREMENT_KEYS, inverter):
         fields[vol.Optional(key)] = _entity(key)
     return vol.Schema(fields)
 
 
-CONTROL_SUGGESTED = {
-    CONF_INVERTER: INVERTER_SUNGROW,
-    CONF_FRONIUS_PORT: FRONIUS_PORT_DEFAULT,
-    CONF_FRONIUS_UNIT: FRONIUS_UNIT_DEFAULT,
-    CONF_FRONIUS_REVERT_S: 0,
-}
-"""Suggested in the dialog only; not stored unless the user keeps them (see const.OPTION_DEFAULTS)."""
+def _control_schema(inverter: str) -> vol.Schema:
+    fields: dict[Any, Any] = {vol.Optional(CONF_NOTIFY): selector.TextSelector()}
+    for key in _for_inverter(EXECUTOR_KEYS, inverter):
+        fields[vol.Optional(key)] = _entity(key)
+    return vol.Schema(fields)
 
 
 def _number(low: int, high: int, unit: str | None = None) -> selector.NumberSelector:
@@ -153,76 +165,127 @@ def _number(low: int, high: int, unit: str | None = None) -> selector.NumberSele
     return selector.NumberSelector(config)
 
 
-def _control_schema() -> vol.Schema:
-    fields: dict[Any, Any] = {
-        vol.Optional(CONF_NOTIFY): selector.TextSelector(),
-        vol.Optional(CONF_INVERTER): selector.SelectSelector(
+INVERTER_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_INVERTER, default=INVERTER_SUNGROW): selector.SelectSelector(
             selector.SelectSelectorConfig(options=list(INVERTERS), translation_key=CONF_INVERTER)
-        ),
-        vol.Optional(CONF_FRONIUS_HOST): selector.TextSelector(),
-        vol.Optional(CONF_FRONIUS_PORT): _number(1, 65535),
-        vol.Optional(CONF_FRONIUS_UNIT): _number(0, 255),
-        vol.Optional(CONF_FRONIUS_REVERT_S): _number(0, FRONIUS_REVERT_MAX_S, "s"),
+        )
     }
-    for key in EXECUTOR_KEYS:
-        fields[vol.Optional(key)] = _entity(key)
-    return vol.Schema(fields)
+)
+FRONIUS_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_FRONIUS_HOST): selector.TextSelector(),
+        vol.Required(CONF_FRONIUS_PORT, default=FRONIUS_PORT_DEFAULT): _number(1, 65535),
+        vol.Required(CONF_FRONIUS_UNIT, default=FRONIUS_UNIT_DEFAULT): _number(0, 255),
+        vol.Required(CONF_FRONIUS_REVERT_S, default=0): _number(0, FRONIUS_REVERT_MAX_S, "s"),
+    }
+)
 
 
-def _control_input(user_input: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
-    """Clean the control step: whole numbers, Fronius fields only for Fronius; errors by field."""
-    data = dict(user_input)
-    if data.get(CONF_INVERTER) != INVERTER_FRONIUS:
-        for key in FRONIUS_KEYS:
-            data.pop(key, None)
-        return data, {}
-    for key in (CONF_FRONIUS_PORT, CONF_FRONIUS_UNIT, CONF_FRONIUS_REVERT_S):
-        if data.get(key) is not None:
-            data[key] = int(data[key])
-    host = (data.get(CONF_FRONIUS_HOST) or "").strip()
-    data[CONF_FRONIUS_HOST] = host
-    return data, ({} if host else {CONF_FRONIUS_HOST: "fronius_host"})
+def _fronius_input(user_input: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
+    """Clean the Fronius step: whole numbers, trimmed host; errors by field."""
+    data = {k: str(v).strip() if k == CONF_FRONIUS_HOST else int(v) for k, v in user_input.items()}
+    return data, ({} if data.get(CONF_FRONIUS_HOST) else {CONF_FRONIUS_HOST: "fronius_host"})
 
 
-class EmsConfigFlow(ConfigFlow, domain=DOMAIN):
-    VERSION = 1
+class _Steps:
+    """The steps shared by the setup dialog and the options: inverter → (Fronius) → planner → measurement
+    → control. `_data` collects the answers, `_base` is what the forms start from (the current settings)."""
 
-    def __init__(self) -> None:
-        self._data: dict[str, Any] = {}
+    _data: dict[str, Any]
 
-    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        await self.async_set_unique_id(DOMAIN)
-        self._abort_if_unique_id_configured()
+    def _base(self) -> dict[str, Any]:
+        return dict(OPTION_DEFAULTS)
+
+    def _suggested(self, user_input: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Current settings with the entity defaults of the inverter chosen in this dialog."""
+        return with_inverter_defaults({**self._base(), **self._data, **(user_input or {})})
+
+    def _inverter(self) -> str:
+        return inverter_of(self._data)
+
+    def _finish(self, data: dict[str, Any]) -> ConfigFlowResult:
+        raise NotImplementedError
+
+    async def _step_inverter(self, step_id: str, user_input: dict[str, Any] | None) -> ConfigFlowResult:
+        if user_input is not None:
+            self._data.update(user_input)
+            if self._inverter() == INVERTER_FRONIUS:
+                return await self.async_step_fronius()
+            return await self.async_step_planner()
+        return self.async_show_form(  # type: ignore[attr-defined]
+            step_id=step_id,
+            data_schema=self.add_suggested_values_to_schema(  # type: ignore[attr-defined]
+                INVERTER_SCHEMA, {CONF_INVERTER: inverter_of(self._base())}
+            ),
+        )
+
+    async def async_step_fronius(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            data, errors = _fronius_input(user_input)
+            if not errors:
+                self._data.update(data)
+                return await self.async_step_planner()
+        return self.async_show_form(  # type: ignore[attr-defined]
+            step_id="fronius",
+            data_schema=self.add_suggested_values_to_schema(  # type: ignore[attr-defined]
+                FRONIUS_SCHEMA, self._suggested(user_input)
+            ),
+            errors=errors,
+        )
+
+    async def async_step_planner(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
             self._data.update(user_input)
             return await self.async_step_measurement()
-        return self.async_show_form(
-            step_id="user",
-            data_schema=self.add_suggested_values_to_schema(_planner_schema(), OPTION_DEFAULTS),
+        return self.async_show_form(  # type: ignore[attr-defined]
+            step_id="planner",
+            data_schema=self.add_suggested_values_to_schema(  # type: ignore[attr-defined]
+                _planner_schema(), self._suggested()
+            ),
         )
 
     async def async_step_measurement(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
             self._data.update(user_input)
             return await self.async_step_control()
-        return self.async_show_form(
+        return self.async_show_form(  # type: ignore[attr-defined]
             step_id="measurement",
-            data_schema=self.add_suggested_values_to_schema(_measurement_schema(), OPTION_DEFAULTS),
+            data_schema=self.add_suggested_values_to_schema(  # type: ignore[attr-defined]
+                _measurement_schema(self._inverter()), self._suggested()
+            ),
         )
 
     async def async_step_control(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        errors: dict[str, str] = {}
         if user_input is not None:
-            data, errors = _control_input(user_input)
-            if not errors:
-                return self.async_create_entry(title=TITLE, data={**self._data, **data})
-        return self.async_show_form(
+            data = {**self._data, **user_input}
+            if inverter_of(data) == INVERTER_SUNGROW:
+                data = {k: v for k, v in data.items() if k not in FRONIUS_KEYS}
+            else:
+                data = {k: v for k, v in data.items() if k not in SUNGROW_ONLY_KEYS}
+            return self._finish(data)
+        return self.async_show_form(  # type: ignore[attr-defined]
             step_id="control",
-            data_schema=self.add_suggested_values_to_schema(
-                _control_schema(), {**CONTROL_SUGGESTED, **OPTION_DEFAULTS, **(user_input or {})}
+            data_schema=self.add_suggested_values_to_schema(  # type: ignore[attr-defined]
+                _control_schema(self._inverter()), self._suggested()
             ),
-            errors=errors,
         )
+
+
+class EmsConfigFlow(_Steps, ConfigFlow, domain=DOMAIN):
+    VERSION = 1
+
+    def __init__(self) -> None:
+        self._data: dict[str, Any] = {}
+
+    def _finish(self, data: dict[str, Any]) -> ConfigFlowResult:
+        return self.async_create_entry(title=TITLE, data=data)
+
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        await self.async_set_unique_id(DOMAIN)
+        self._abort_if_unique_id_configured()
+        return await self._step_inverter("user", user_input)
 
     async def async_step_import(self, import_data: dict[str, Any]) -> ConfigFlowResult:
         """configuration.yaml → config entry. Runs on every start and replaces the entry's data with the
@@ -240,11 +303,17 @@ class EmsConfigFlow(ConfigFlow, domain=DOMAIN):
         return EmsOptionsFlow()
 
 
-class EmsOptionsFlow(OptionsFlow):
+class EmsOptionsFlow(_Steps, OptionsFlow):
     """Change the inputs later (Settings → Devices & services → Expensive Mini Savings → Configure)."""
 
     def __init__(self) -> None:
         self._data: dict[str, Any] = {}
+
+    def _base(self) -> dict[str, Any]:
+        return _raw_config(self.config_entry)
+
+    def _finish(self, data: dict[str, Any]) -> ConfigFlowResult:
+        return self.async_create_entry(data=data)
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if self.config_entry.source == SOURCE_IMPORT:
@@ -253,36 +322,4 @@ class EmsOptionsFlow(OptionsFlow):
                 reason="yaml",
                 description_placeholders={"settings": format_settings(merged_config(self.config_entry))},
             )
-        if user_input is not None:
-            self._data.update(user_input)
-            return await self.async_step_measurement()
-        return self.async_show_form(
-            step_id="init",
-            data_schema=self.add_suggested_values_to_schema(
-                _planner_schema(), merged_config(self.config_entry)
-            ),
-        )
-
-    async def async_step_measurement(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        if user_input is not None:
-            self._data.update(user_input)
-            return await self.async_step_control()
-        return self.async_show_form(
-            step_id="measurement",
-            data_schema=self.add_suggested_values_to_schema(
-                _measurement_schema(), merged_config(self.config_entry)
-            ),
-        )
-
-    async def async_step_control(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        errors: dict[str, str] = {}
-        if user_input is not None:
-            data, errors = _control_input(user_input)
-            if not errors:
-                return self.async_create_entry(data={**self._data, **data})
-        suggested = {**CONTROL_SUGGESTED, **merged_config(self.config_entry), **(user_input or {})}
-        return self.async_show_form(
-            step_id="control",
-            data_schema=self.add_suggested_values_to_schema(_control_schema(), suggested),
-            errors=errors,
-        )
+        return await self._step_inverter("init", user_input)
