@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import pytest
+
 from custom_components.ems import control as c
 from custom_components.ems.const import (
+    CONF_CAPACITY,
     CONF_DISCHARGE_MAX,
     CONF_EMS_MODE,
     CONF_FORCED,
@@ -26,6 +29,18 @@ def test_values_are_parsed_once(hass):
     hass.states.async_set(DEFAULTS[CONF_IMPORTED], "500.0")
     assert inp.counters() == c.Counters(charged=0.0, charged_pv=0.0, imported=500.0)
     assert Inputs(hass, {}).soc() is None  # not configured
+
+
+def test_energy_is_converted_by_unit(hass):
+    inp = Inputs(hass, dict(DEFAULTS))
+    hass.states.async_set(DEFAULTS[CONF_IMPORTED], "4118610.0", {"unit_of_measurement": "Wh"})
+    assert inp.counters().imported == pytest.approx(4118.61)
+    hass.states.async_set(DEFAULTS[CONF_IMPORTED], "2.5", {"unit_of_measurement": "MWh"})
+    assert inp.counters().imported == 2500.0
+    hass.states.async_set(DEFAULTS[CONF_CAPACITY], "7680.0", {"unit_of_measurement": "Wh"})
+    assert inp.kwh(CONF_CAPACITY) == pytest.approx(7.68)
+    hass.states.async_set(DEFAULTS[CONF_CAPACITY], "10.13")  # no unit: kWh
+    assert inp.kwh(CONF_CAPACITY) == 10.13
 
 
 def test_sungrow_reading(hass):

@@ -129,7 +129,7 @@ class PlannerSettings:
     def battery(self) -> Battery:
         """The battery as planned: capacity and reserve from the inverter, wear and grid charge power."""
         default = Battery()
-        capacity = self.inputs.number(CONF_CAPACITY)
+        capacity = self.inputs.kwh(CONF_CAPACITY)
         reserve = self.inputs.number(CONF_RESERVE)
         return Battery(
             capacity_kwh=capacity if capacity is not None else default.capacity_kwh,
